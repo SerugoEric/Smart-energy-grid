@@ -1,0 +1,6 @@
+panel,rows_raw,rows_aggregate,keys_identical,counts_identical,max_abs_energy_diff_kwh,max_abs_completeness_diff_pct,status
+P1,1680,1680,True,True,0.0,0.0,PASS
+P2,7,7,True,True,5e-09,0.0,PASS
+P3,1,1,True,True,5e-09,0.0,PASS
+P4,7,7,True,True,0.0,0.0,PASS
+P5,10,10,True,True,0.0,0.0,PASS

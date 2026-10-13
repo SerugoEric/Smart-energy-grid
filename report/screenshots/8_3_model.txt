@@ -1,0 +1,35 @@
+==============================================================================
+Section 8.3  Regression model training and evaluation
+Started 2026-10-08T17:26:39+02:00 CAT
+Machine DESKTOP-94DVA7R/AMD64
+==============================================================================
+
+  usable training rows     2,880
+  validation rows          1,680
+  test rows                1,680
+
+  GB-1 trained  validation MAE 15.090665  RMSE 20.186161
+  GB-2 trained  validation MAE 17.743412  RMSE 24.608861
+
+VALIDATION TABLE (kWh)
+  Config    Train rows  Val rows       Val MAE      Val RMSE
+  GB-1            2880      1680     15.090665     20.186161
+  GB-2            2880      1680     17.743412     24.608861
+  shared predictors: lag1d, lag2d, prev_day_mean, hour, day_of_week, is_weekend, day_index, region (one-hot)
+Selected configuration: GB-1 (lowest validation MAE 15.090665 kWh)
+
+FROZEN MODEL TEST PREDICTIONS (kWh)
+  test predictions       1,680
+  test MAE               15.116640
+  test RMSE              20.802111
+
+               hour_start   region     actual  model_pred
+2026-09-21 22:00:00+00:00 Region 1 435.589852  477.835515
+2026-09-21 23:00:00+00:00 Region 1 438.892476  477.835515
+2026-09-22 00:00:00+00:00 Region 1 437.375285  463.691815
+2026-09-22 01:00:00+00:00 Region 1 447.844121  463.900435
+2026-09-22 02:00:00+00:00 Region 1 463.196811  477.225398
+
+Saved forecasting/selected_model_config.json and selected_model_pipeline.pkl (frozen)
+Completed 2026-10-08T17:26:47+02:00 CAT
+Duration 7.567 s

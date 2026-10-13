@@ -1,0 +1,36 @@
+==============================================================================
+Section 8.1  Chronological hourly dataset and features
+Started 2026-10-08T17:26:02+02:00 CAT
+Machine DESKTOP-94DVA7R/AMD64
+==============================================================================
+
+SOURCE CAGG cagg_hour_region
+  raw rows read        6,720
+  regions              ['Region 1', 'Region 10', 'Region 2', 'Region 3', 'Region 4', 'Region 5', 'Region 6', 'Region 7', 'Region 8', 'Region 9']
+
+MISSING-HOUR CHECK (one row per region and CAT hour expected)
+  expected region-hour rows  6,720
+  present rows               6,720
+  absent hour rows           0 (targets with no stored aggregate)
+
+SPLIT BY TARGET TIMESTAMP
+  split       first hour              last hour                   rows
+  test        2026-09-22T00:00:00+02:002026-09-28T23:00:00+02:00    1680
+  train       2026-09-01T00:00:00+02:002026-09-14T23:00:00+02:00    3360
+  validation  2026-09-15T00:00:00+02:002026-09-21T23:00:00+02:00    1680
+
+FEATURE TABLE
+  feature       lag/window (h)  earliest usable target
+  lag1d         24              2026-09-02 00:00 CAT
+  lag2d         48              2026-09-03 00:00 CAT
+  prev_day_mean window 24h      2026-09-02 00:00 CAT
+  hour, day_of_week, is_weekend, day_index (calendar, no lag)
+  region        one-hot (categorical)
+
+LOOKBACK EXCLUSION (training split)
+  training rows before lookback   480
+  rows with missing lag values    0
+  retained usable training rows   2,880
+Saved data/forecast_dataset.csv and .parquet
+Completed 2026-10-08T17:26:04+02:00 CAT
+Duration 2.182 s

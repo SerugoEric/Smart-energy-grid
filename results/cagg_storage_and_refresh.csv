@@ -1,0 +1,4 @@
+view_name,data_bytes,index_bytes,total_bytes,total_mb,recorded_initial_refresh_s,refresh_source
+cagg_15min_region,2072576,2121728,4358144,4.156,51.672,C:\smart-energy-grid\logs\dashboard_benchmark_2026-10-07_01-31-51.txt
+cagg_hour_region,532480,606208,1294336,1.234,31.222,C:\smart-energy-grid\logs\dashboard_benchmark_2026-10-07_01-31-51.txt
+cagg_day_meter,7667712,5382144,13180928,12.57,16.15,C:\smart-energy-grid\logs\dashboard_benchmark_2026-10-07_01-31-51.txt

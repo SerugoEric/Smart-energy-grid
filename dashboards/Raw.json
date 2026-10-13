@@ -1,0 +1,65 @@
+{
+  "name": "Raw",
+  "tool": "Dash (Plotly)",
+  "note": "Dash has no Grafana JSON; this is the portable dashboard definition. Contains no connection secrets.",
+  "timezone": "Africa/Kigali",
+  "default_time_range": {
+    "picker_start": "2026-09-22",
+    "picker_end_inclusive": "2026-09-28",
+    "query_start": "2026-09-22T00:00:00+02:00",
+    "query_end_exclusive": "2026-09-29T00:00:00+02:00"
+  },
+  "variables": [
+    {
+      "name": "range",
+      "type": "date_range_cat_days",
+      "end_exclusive": true,
+      "default": "2026-09-22 .. 2026-09-29"
+    },
+    {
+      "name": "meter",
+      "type": "dropdown",
+      "default": 1000000000,
+      "used_by": [
+        "P4"
+      ]
+    }
+  ],
+  "panels": [
+    {
+      "id": "P1",
+      "title": "Hourly regional energy",
+      "unit": "kWh",
+      "source": "energy_readings JOIN meters",
+      "sql": "-- Section 7.1 / 7.3  Panel P1 (Raw): hourly regional energy, kWh.\n-- Source: energy_readings (cleaned, 10,643,735 rows) JOIN meters for the region.\n-- Range is the selected whole-CAT-day window [start, end), end exclusive.\n-- Bucket origin 2026-09-01 00:00+02 aligns CAT hours.\nSELECT time_bucket(INTERVAL '1 hour', r.event_time,\n                   TIMESTAMPTZ '2026-09-01 00:00:00+02') AS bucket,\n       m.region                                        AS region,\n       sum(r.energy_kwh)                               AS energy_kwh\nFROM energy_readings r\nJOIN meters m USING (meter_id)\nWHERE r.event_time >= %(start)s::timestamptz\n  AND r.event_time <  %(end)s::timestamptz\nGROUP BY bucket, m.region\nORDER BY bucket, m.region;\n"
+    },
+    {
+      "id": "P2",
+      "title": "Daily network energy",
+      "unit": "kWh",
+      "source": "energy_readings",
+      "sql": "-- Section 7.1 / 7.3  Panel P2 (Raw): daily network energy, kWh.\n-- Source: energy_readings. Daily buckets align to CAT midnight (origin 2026-09-01).\nSELECT time_bucket(INTERVAL '1 day', r.event_time,\n                   TIMESTAMPTZ '2026-09-01 00:00:00+02') AS bucket,\n       sum(r.energy_kwh)                               AS energy_kwh\nFROM energy_readings r\nWHERE r.event_time >= %(start)s::timestamptz\n  AND r.event_time <  %(end)s::timestamptz\nGROUP BY bucket\nORDER BY bucket;\n"
+    },
+    {
+      "id": "P3",
+      "title": "Network energy in seven-day periods",
+      "unit": "kWh",
+      "source": "energy_readings",
+      "sql": "-- Section 7.1 / 7.3  Panel P3 (Raw): network energy in the four seven-day\n-- periods beginning 1, 8, 15 and 22 September, kWh, limited to the selected\n-- range. One scan of energy_readings is re-bucketed to CAT days, then mapped\n-- onto the four Section 5.1 periods (bucket origin 2026-09-01 00:00+02).\nWITH periods(period, p_start, p_end, ord) AS (\n    VALUES\n      ('1-7 Sep',   TIMESTAMPTZ '2026-09-01 00:00:00+02', TIMESTAMPTZ '2026-09-08 00:00:00+02', 1),\n      ('8-14 Sep',  TIMESTAMPTZ '2026-09-08 00:00:00+02', TIMESTAMPTZ '2026-09-15 00:00:00+02', 2),\n      ('15-21 Sep', TIMESTAMPTZ '2026-09-15 00:00:00+02', TIMESTAMPTZ '2026-09-22 00:00:00+02', 3),\n      ('22-28 Sep', TIMESTAMPTZ '2026-09-22 00:00:00+02', TIMESTAMPTZ '2026-09-29 00:00:00+02', 4)\n),\ndaily AS (\n    SELECT time_bucket(INTERVAL '1 day', r.event_time,\n                       TIMESTAMPTZ '2026-09-01 00:00:00+02') AS d,\n           sum(r.energy_kwh)                                   AS energy_kwh\n    FROM energy_readings r\n    WHERE r.event_time >= %(start)s::timestamptz\n      AND r.event_time <  %(end)s::timestamptz\n    GROUP BY 1\n)\nSELECT p.period          AS period,\n       sum(daily.energy_kwh) AS energy_kwh\nFROM periods p\nJOIN daily\n  ON daily.d >= GREATEST(p.p_start, %(start)s::timestamptz)\n AND daily.d <  LEAST(p.p_end,   %(end)s::timestamptz)\nGROUP BY p.period, p.ord\nORDER BY p.ord;\n"
+    },
+    {
+      "id": "P4",
+      "title": "Daily energy of selected meter",
+      "unit": "kWh",
+      "source": "energy_readings",
+      "sql": "-- Section 7.1 / 7.3  Panel P4 (Raw): daily energy of the selected meter, kWh.\n-- Source: energy_readings. The meter variable is used by this panel only.\nSELECT time_bucket(INTERVAL '1 day', r.event_time,\n                   TIMESTAMPTZ '2026-09-01 00:00:00+02') AS bucket,\n       sum(r.energy_kwh)                               AS energy_kwh\nFROM energy_readings r\nWHERE r.meter_id = %(meter)s\n  AND r.event_time >= %(start)s::timestamptz\n  AND r.event_time <  %(end)s::timestamptz\nGROUP BY bucket\nORDER BY bucket;\n"
+    },
+    {
+      "id": "P5",
+      "title": "Completeness by region",
+      "unit": "percent",
+      "source": "energy_readings JOIN meters (observed = count(*)); meters (planned)",
+      "sql": "-- Section 7.1 / 7.3  Panel P5 (Raw): completeness by region, percent.\n-- observed = count(*) of cleaned energy_readings rows per region (the cleaned\n-- table holds one row per meter_id + event_time pair, so count(*) equals the\n-- unique observed pair count).\n-- planned  = registered meters in the region x 96 readings/day x days in range.\n-- days     = calendar days between the CAT-midnight bounds, end exclusive.\nWITH reg AS (\n    SELECT region, count(*) AS registered\n    FROM meters\n    GROUP BY region\n),\nobs AS (\n    SELECT m.region, count(*) AS observed\n    FROM energy_readings r\n    JOIN meters m USING (meter_id)\n    WHERE r.event_time >= %(start)s::timestamptz\n      AND r.event_time <  %(end)s::timestamptz\n    GROUP BY m.region\n)\nSELECT reg.region              AS region,\n       reg.registered          AS registered,\n       obs.observed            AS observed,\n       reg.registered * 96\n           * ((%(end)s::date - %(start)s::date))            AS planned,\n       100.0 * obs.observed\n           / (reg.registered * 96\n              * ((%(end)s::date - %(start)s::date)))        AS completeness\nFROM reg\nJOIN obs USING (region)\nORDER BY split_part(reg.region, ' ', 2)::int;\n"
+    }
+  ]
+}

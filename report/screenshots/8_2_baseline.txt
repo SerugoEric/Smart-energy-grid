@@ -1,0 +1,38 @@
+==============================================================================
+Section 8.2  Previous-day baseline evaluation
+Started 2026-10-08T17:26:28+02:00 CAT
+Machine DESKTOP-94DVA7R/AMD64
+==============================================================================
+
+  test predictions        1,680
+  actual hours            168 per region
+  regions                 10
+
+OVERALL (all 1,680 test observations, kWh)
+  MAE   42.708281 kWh
+  RMSE  79.402867 kWh
+
+  sample predictions (first 5 test rows)
+               hour_start   region     actual  baseline_pred
+2026-09-21 22:00:00+00:00 Region 1 435.589852     441.869168
+2026-09-21 23:00:00+00:00 Region 1 438.892476     435.374052
+2026-09-22 00:00:00+00:00 Region 1 437.375285     432.510325
+2026-09-22 01:00:00+00:00 Region 1 447.844121     443.205576
+2026-09-22 02:00:00+00:00 Region 1 463.196811     468.379565
+
+PER-REGION BASELINE METRICS (kWh)
+  Region                 MAE          RMSE
+  Region 1         44.873117     83.695759
+  Region 10        39.716855     74.281635
+  Region 2         41.628612     76.810539
+  Region 3         42.753727     77.607456
+  Region 4         34.856463     64.232754
+  Region 5         44.400445     81.084334
+  Region 6         39.425942     74.766375
+  Region 7         39.688289     73.944966
+  Region 8         55.967231    102.057263
+  Region 9         43.772130     80.178337
+
+Predictions saved to forecasting/baseline_test_predictions.csv
+Completed 2026-10-08T17:26:29+02:00 CAT
+Duration 0.825 s

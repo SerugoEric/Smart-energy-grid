@@ -1,0 +1,466 @@
+1. First, understand the whole project
+=======================================
+What problem are we solving?
+Imagine an electricity company with 4,000 smart meters. Each meter sends a new reading every 15 minutes. The company wants to understand electricity consumption, detect unusual behaviour, store millions of readings efficiently, and predict future demand.
+Our project demonstrates how a utility company could use big-data technologies to accomplish these tasks.
+There are five main goals:
+
+1. Collect data
+Receive electricity readings from smart meters using Python and MQTT, with EMQX acting as the message broker for the pilot.
+
+
+
+
+2. Store and clean data
+Store millions of records in PostgreSQL and TimescaleDB, check data quality, and remove duplicate readings.
+
+
+
+
+3. Improve performance
+Compare time-based storage chunks, compression strategies, and precomputed summaries.
+
+
+
+
+4. Analyse and visualise
+Identify demand patterns, compare regions, measure reporting quality, and detect anomalies.
+
+
+
+
+5. Predict future demand
+Compare a simple previous-day forecast with a machine-learning model using gradient boosting.
+
+
+
+The most important thing to communicate to your colleagues is that these are connected parts of one project, not separate assignments.
+For example, the forecast depends on the data collected and cleaned earlier. The dashboards depend on the database and aggregate views. The storage benchmarks help justify how we should organise data in a real system.
+2. Understand the complete architecture
+Smart meter simulator
+Generates current, voltage, frequency, power and energy readings
+
+Two ingestion routes
+MQTT pilot
+Python publisher → EMQX → subscriber → energy_live
+
+
+Full capture
+Python → PostgreSQL/TimescaleDB → energy_readings
+
+
+
+
+Data quality and cleaning
+Validate counts, measure missing and delayed readings, remove duplicates
+
+Analytics and optimisation
+Chunk benchmarks · Compression · SQL analysis · Continuous aggregates
+
+Dashboards
+Dash and Plotly
+
+
+Forecasting
+Baseline vs gradient boosting
+
+
+
+
+Explain the technologies in simple language
+Technology	What it does in our project
+Python	Generates, transfers, processes and analyses data.
+MQTT	A lightweight messaging protocol used to publish and receive meter readings.
+EMQX	The message broker that receives MQTT messages and distributes them to subscribers.
+PostgreSQL	The relational database that stores the records and executes SQL queries.
+TimescaleDB	A PostgreSQL extension designed to manage time-series data efficiently.
+Hypertable	A time-series table automatically divided into smaller time-based chunks.
+Continuous aggregates	Precomputed summaries, such as hourly energy by region, that reduce repeated work.
+Dash and Plotly	Build interactive dashboards and charts.
+scikit-learn	Trains and evaluates the demand-forecasting model.
+One important clarification for the group: the MQTT pilot and the full data capture use different ingestion routes. The pilot proves the MQTT message path works. The full 10.7-million-reading capture uses direct Python-to-database ingestion according to your guide; it does not mean every full-capture reading travelled through EMQX.
+3. How to explain each section to your colleagues
+Slide 1 — Project introduction
+Start with the problem before introducing the numbers.
+Our project is called Smart Energy Grid Analytics. We are simulating an electricity utility that collects readings from 4,000 smart meters.
+Each meter is expected to report every 15 minutes. This creates millions of time-stamped records, which would be expensive to process repeatedly using inefficient queries.
+Our objective was to build a complete data pipeline: ingest the data, assess its quality, optimise its storage, analyse electricity consumption, visualise the results and predict future demand.
+We processed 10,696,848 emitted readings and created a cleaned benchmark containing 10,643,735 rows.
+
+
+
+
+Make sure everyone understands these three numbers:
+- 10,752,000 planned readings: the theoretical number of readings if every meter reports all 96 intervals per day for 28 days.
+- 10,696,848 emitted readings: the records actually generated and consumed.
+- 10,643,735 cleaned readings: the records remaining after removing 53,113 duplicate copies.
+An important distinction: matching the generator's emitted count proves that the emitted records were accounted for. It does not mean every planned interval was received; some readings were missing.
+Slide 2 — Architecture and execution order
+Explain why we built the project in stages.
+1. First, we created the database structures.
+2. We tested MQTT ingestion on a small sample.
+3. We captured the full dataset.
+4. We checked data quality and cleaned duplicates.
+5. We tested different storage configurations.
+6. We analysed electricity usage and built aggregate views.
+7. We built dashboards and a forecasting model.
+Why does the order matter?
+If the dataset contains duplicates, our demand totals can be overstated. If we benchmark different storage designs using different datasets, the comparison may be unfair. If we build dashboards before preparing summaries, they may repeatedly scan millions of records.
+The central principle is consistent data before fair performance comparisons.
+Slide 3 — Environment
+Explain why the computer's specifications matter.
+Our machine has two physical CPU cores, 7.85 GB RAM and a busy Windows 10 environment. PostgreSQL/TimescaleDB and EMQX run in Docker.
+The computer's limitations affect how quickly queries execute. Memory pressure, disk reads and cached data can all change benchmark timings.
+That is why the project uses the median of repeated runs rather than selecting the fastest run.
+A useful way to explain the median:
+Suppose a query takes 100, 110, 105, 300 and 108 milliseconds. The median is 108 ms. The unusually slow 300 ms run does not distort the result as much as it would the average.
+Question for the group: Why should we disclose the machine specifications?
+Expected answer: So that others can interpret the results fairly and understand that our measurements describe this environment, not every possible production server.
+Slide 4 — Database structures
+There are three main tables.
+meters — meter information
+4,000 rows describing the meters, their regions, customer types and other metadata.
+
+
+energy_live — MQTT pilot data
+A regular PostgreSQL table used to verify the small publish–subscribe–insert pipeline.
+
+
+energy_readings — historical data
+The TimescaleDB hypertable holding the large dataset, organised into daily time-based chunks.
+
+
+A few design choices to understand:
+- BIGINT supports meter identifiers that can exceed the maximum value of a regular 32-bit INTEGER.
+- DOUBLE PRECISION stores the measurements at higher precision than REAL.
+- Duplicate readings were allowed initially because the project needed to measure duplicates before removing them.
+- Identical explicit indexes on comparison tables help keep benchmark comparisons fair.
+A hypertable is still queried using normal SQL. TimescaleDB manages the underlying chunks for you.
+Slide 5 — MQTT pilot
+This is one of the most important concepts for your group to understand.
+1. Python publisher
+Creates a reading and publishes it to an MQTT topic.
+
+2. EMQX broker
+Receives the message and routes it to matching subscribers.
+
+3. Python subscriber
+Receives and parses the JSON message.
+
+4. PostgreSQL — energy_live
+Stores the reading as a database row.
+
+
+The counts should agree at 2,000:
+Stage	Expected result
+Readings published	2,000
+Broker acknowledgements	2,000
+Messages received by subscriber	2,000
+Rows inserted into energy_live	2,000
+Parsing errors	0
+The group should understand that a broker acknowledgement alone does not prove a message reached the subscriber or database. That is why we check all four counts.
+Also, MQTT QoS 1 means at least once delivery at the protocol level. Duplicate delivery can happen, so the subscriber and database counts are important.
+Slide 6 — Full data capture
+Here the group should explain the difference between the pilot and the large data load.
+The full capture generated and consumed 10,696,848 readings and committed the same number of rows in 644.7 seconds.
+The throughput is:
+\[
+\frac{10,696,848}{644.7}\approx16,590
+\]
+
+That is approximately 16,590 rows per second.
+Why direct Python-to-database ingestion? It avoids an intermediate CSV write and subsequent CSV read. This reduces an additional file-processing step, although it does not automatically make every pipeline faster.
+Slide 7 — Data quality
+This section answers the question: Can we trust the readings?
+The project measured three important data problems.
+Missing readings
+108,265
+1.0069% of planned intervals
+
+
+Duplicate copies
+53,113
+0.4990% of emitted records
+
+
+Delayed unique readings
+213,090
+2.0020% of unique readings
+
+
+Completeness
+98.9931%
+Against the planned grid
+
+
+
+Explain each one:
+- Missing: the expected reading never arrived.
+- Duplicate: an additional copy of a reading was generated or received.
+- Delayed: the reading arrived later than expected.
+Delayed readings are not necessarily missing. A reading can eventually arrive but still arrive too late for a daily report.
+This is why an electricity utility must consider both data completeness and arrival time.
+Slide 8 — Cleaning
+We removed 53,113 duplicate copies, leaving 10,643,735 unique readings.
+The project also checked whether duplicate readings had conflicting values. The measured result was zero conflicts.
+Why not replace missing readings with zero?
+Because missing data and zero consumption mean different things. If we replace missing intervals with zero, we incorrectly imply that the customer consumed no electricity during those intervals. This biases energy analysis and distorts completeness.
+The cleaned dataset becomes the common benchmark for all subsequent storage experiments.
+Slide 9 — Chunk interval comparison
+TimescaleDB divides a hypertable into chunks. The chunk interval determines how much time each chunk covers.
+- One-day chunks: a separate time chunk for each day.
+- Three-hour chunks: more, smaller chunks.
+- One-week chunks: fewer, larger chunks.
+Smaller chunks can help queries that target narrow time ranges, but too many chunks can add planning and management overhead. Larger chunks can reduce that overhead but may require processing more data.
+Our measurements show there is no universal winner.
+Query	Best measured layout	Median time
+Q1: Hourly average on a particular day	3-hour chunks	192.2 ms
+Q2: Ten heaviest 15-minute intervals	1-day chunks	630.9 ms
+Q3: Total energy per meter	1-day chunks	3,078.7 ms
+Q4: One meter over one week	1-week chunks	2.8 ms
+Q5: Full scan	3-hour chunks, marginally	1,931.7 ms
+The group's conclusion is that one-day chunks provide a reasonable general-purpose balance for this workload, especially for Q2 and Q3.
+Be careful when presenting this conclusion: the Q1 execution plan shows that disk reads and caching influenced the measured time. The result is not simply proof that three-hour chunks are always faster.
+Slide 10 — Compression
+The team tested two ways of arranging data during compression.
+
+
+
+
+
+
+
+
+
+Strategy A: ORDER BY time
+3.080× compression
+Reduces storage from 1,351 MB to 438.7 MB. Best for time-range reporting, including Q1.
+
+
+
+
+
+
+
+
+
+
+
+
+Strategy B: SEGMENT BY meter_id
+2.694× compression
+Reduces storage to 501.6 MB. Best for queries targeting individual meters, including Q4.
+
+
+
+The key lesson is that data layout affects both storage size and query performance.
+For example, a query for one particular meter benefits when data is grouped by meter. A query across a narrow time range may benefit when data is ordered by time.
+The recommendation is to retain both layouts when the workload justifies the extra storage. Together, the two compressed tables are 30.4% smaller than the single uncompressed baseline, based on the recorded sizes.
+Slide 11 — Utility analysis and findings
+This is where we stop talking only about databases and start answering business questions.
+A. When is electricity demand highest?
+The analysis shows daily energy rising from 141,195 kWh on 1 September to 152,464 kWh on 28 September. The lowest daily totals occur over the first weekend, around 111,700 kWh.
+The measured peak 15-minute demand was 7,993.691 kW on 28 September at 13:00 CAT.
+Explain the difference between these units:
+- kW: the rate at which electrical power is being used at a particular time.
+- kWh: the amount of electrical energy consumed over time.
+B. Which regions consume more?
+Region 8 records 1,258.7 kWh per meter, while Region 4 records 811.0 kWh per meter.
+However, higher consumption does not automatically mean that Region 8 is less efficient. The customer mix matters: industrial meters typically consume much more energy than residential meters.
+Our analysis found that industrial meters account for 10.15% of the meter population but 57.6% of total energy. Region 8 has more industrial meters registered.
+C. How does delayed data affect reporting?
+On 21 September, the early daily close reported 149,400.545 kWh, compared with 149,552.723 kWh after all arrivals.
+The difference was 152.178 kWh, or 0.1018% of the final total.
+This shows why an electricity utility should not always close its daily reporting period immediately at midnight. Late readings can cause temporary underreporting.
+D. Can we detect anomalies?
+The detector looks for readings that are unusually high or low compared with a meter's typical consumption for the same hour and weekday/weekend category.
+The recorded result was:
+- 40 of 40 injected events detected at event level.
+- Zero false flags.
+- 473 individual readings flagged out of 474 readings inside event windows.
+The distinction is important: detecting all 40 events does not mean every anomalous reading was flagged. One reading was missed, even though each injected event had at least one detection.
+Slide 12 — Continuous aggregates
+A continuous aggregate stores a summary of the underlying time-series data so that the database does not need to repeat the same expensive aggregation every time a dashboard refreshes.
+For example, imagine calculating electricity consumption for every region, every hour, across millions of records. Doing that repeatedly is wasteful.
+Instead, we precompute and store the results.
+Aggregate	What it summarises
+cagg_15min_region	Energy every 15 minutes, by region
+cagg_hour_region	Hourly energy, by region
+cagg_day_meter	Daily energy, by meter
+The total stored aggregate size is 17.96 MB compared with the 1,351 MB uncompressed baseline.
+That's approximately 1.3% of the baseline size, although the aggregate data is a summary rather than a replacement for the original readings.
+Why is freshness important?
+There are three concepts the group should distinguish:
+1. Materialized-only query: returns stored summaries and can omit readings that have not yet been refreshed into them.
+2. Real-time aggregation: can combine materialized history with recent raw data for eligible buckets.
+3. Manual refresh: updates the stored summary to incorporate readings that arrived late in an already-materialized bucket.
+This matters because a dashboard can be fast and still show outdated results if its data freshness is not managed correctly.
+Slide 13 — Dashboards
+The brief specifies Grafana, but the team used Dash and Plotly because Grafana was not installed on the machine.
+Two dashboards were developed:
+- Raw dashboard: queries the underlying readings.
+- Aggregate dashboard: uses the precomputed summaries.
+Both contain the same five panels, and the project verified that their results match within the specified tolerances.
+The measured performance improvement
+Raw dashboard
+5,699.3 ms
+
+Aggregate dashboard
+1,272.6 ms
+
+
+
+4.5× faster overall
+The aggregate dashboard refreshes in about 22% of the raw dashboard's measured time.
+
+
+
+The strongest individual improvements were:
+- Regional completeness: 93.7× faster.
+- Seven-day period energy: 88.6× faster.
+- Daily network energy: 52.9× faster.
+A selected meter's daily view improved only 1.3× because the original query already benefited from an index.
+This gives the group a good technical conclusion: pre-aggregation is particularly valuable for repeated summary reporting, but not every query needs it.
+Slide 14 — Forecasting
+The objective is to predict hourly regional energy consumption using historical data.
+The team compares two approaches.
+Baseline: predicts the next day's value using the previous day's same hour.
+Gradient boosting: learns patterns from previous-day energy, two-day-old energy, previous-day averages and calendar features.
+The evaluation uses a time-based split:
+- Training: 1–14 September.
+- Validation: 15–21 September.
+- Testing: 22–28 September.
+This is important because a forecasting model must learn from the past and predict the future. Randomly mixing observations across the periods could allow information from the future to leak into training.
+The measured results
+Mean Absolute Error (MAE)
+Baseline
+
+
+
+42.708
+
+Boosting
+
+
+
+15.117
+
+
+64.6% lower MAE
+The model's average absolute error is substantially lower than the baseline on the held-out test period.
+
+
+
+RMSE also improved from 79.403 to 20.802 kWh.
+The practical value is better demand planning: more accurate forecasts can help utilities plan capacity and prepare for periods of high consumption.
+However, we should not claim that the model is ready for live deployment without further validation on newer data and monitoring its performance over time.
+Slide 15 — Management recommendations
+Connect the technical results to actions an electricity utility could take.
+1. Improve reporting reliability. Allow time for delayed readings to arrive before finalising daily reports. Monitor completeness and run the anomaly detector.
+2. Optimise storage and reporting. Use one-day chunks as the general-purpose choice for the measured workload. Retain the time-ordered and meter-segmented compressed layouts for their respective access patterns.
+3. Keep dashboards fast and fresh. Use the three continuous aggregates, schedule refreshes and refresh affected historical buckets when late readings require it.
+4. Use forecasting carefully. The gradient-boosting model outperformed the previous-day baseline in the test period. Before operational deployment, validate it on future periods and ensure its input features are fresh.
+The tutor should see that the project does more than store data: it uses evidence to recommend operational improvements.
+
+4. How to manage the group presentation
+Because this is group work, I recommend that you organise the presentation by responsibility rather than asking each member to memorise all 16 slides.
+Here is a possible division for a group of three. Adjust it to reflect who actually did the work.
+Member 1 — Ingestion and database
+
+Slides 1–6
+
+Introduces the project, explains architecture, environment, schema, MQTT pilot and full capture.
+Must understand: MQTT, EMQX, PostgreSQL, TimescaleDB, table structures and ingestion counts.
+
+
+Member 2 — Data quality and optimisation
+
+Slides 7–10
+
+Explains data quality, cleaning, chunk interval tests and compression.
+Must understand: missing versus duplicate readings, hypertable chunks, compression ratios and benchmark methodology.
+
+
+Member 3 — Analytics and recommendations
+
+Slides 11–15
+
+Presents utility findings, continuous aggregates, dashboards, forecasting and recommendations.
+Must understand: kW versus kWh, anomaly detection, aggregate freshness, MAE/RMSE and business implications.
+
+
+Slide 16 should list each member's real contribution. Do not assign someone work they did not actually perform.
+Questions to ask your colleagues during the preparation meeting
+1. Why did we use EMQX?
+2. Why is energy_readings a hypertable?
+3. Why did we remove 53,113 duplicate copies?
+4. Why are missing readings not replaced with zero?
+5. Why keep two compressed tables?
+6. Why are continuous aggregates useful?
+7. How do we know the forecast is better?
+8. What is the most important project limitation?
+5. Prepare for the live demonstration
+The slides explain what the group accomplished. The demo proves that the system and its evidence exist.
+Use this order to keep the demo short and reliable.
+1. Show the database first.
+   In Windows CMD, navigate to your project and run:
+   cd C:\smart-energy-grid
+   docker start timescaledb emqx
+   docker ps
+   docker exec -it timescaledb psql -U auca -d smart_energy_grid
+   
+   
+   Then run these queries inside psql:
+   SELECT COUNT(*) FROM meters;
+   SELECT COUNT(*) FROM energy_readings;
+   SELECT COUNT(*)
+   FROM timescaledb_information.chunks
+   WHERE hypertable_name = 'energy_readings';
+   
+   SELECT view_name
+   FROM timescaledb_information.continuous_aggregates;
+   
+   
+   Expected results, based on your guide: 4,000 meters, 10,643,735 cleaned readings, 29 chunks and three continuous aggregates.
+2. Show both dashboards.
+   Open two CMD windows. In the first:
+   cd C:\smart-energy-grid
+   python dashboards\raw_app.py
+   
+   
+   In the second:
+   cd C:\smart-energy-grid
+   python dashboards\aggregate_app.py
+   
+   
+   Open http://127.0.0.1:8050 and http://127.0.0.1:8051 in your browser. Refresh both dashboards and explain that they use different data sources but should return equivalent results.
+3. Show the forecasting result.
+   Open forecasting/output/8_4_forecast_comparison_Region_1.png.
+   Point out the actual demand, the previous-day baseline and the gradient-boosting prediction. Explain that the model was evaluated on a held-out week, not the training period.
+Do not depend on running a long benchmark or generating all 10 million records live during the presentation. Have the screenshots, logs and CSV evidence ready in advance.
+6. Your preparation checklist
+Group readiness
+
+0 of 10
+
+
+
+[ ] Everyone can explain the project objective in their own words.
+[ ] Each member understands the end-to-end architecture.
+[ ] Every member knows their actual contribution and can explain it.
+[ ] The group can explain the difference between planned, emitted and cleaned readings.
+[ ] The MQTT pilot evidence is available and its counts are consistent.
+[ ] The database tables and continuous aggregates can be queried.
+[ ] Both dashboards start successfully and return matching results.
+[ ] The forecast plot and evaluation results are ready.
+[ ] The screenshots, benchmark CSVs and timestamped logs are organised.
+[ ] The group has rehearsed likely tutor questions and the handovers between speakers.
+
+My final advice
+Since you want to help your colleagues understand the project, arrange a meeting where you first explain the big picture, then walk through the architecture, and finally let each member explain their own section to the others.
+Do not let the group focus only on memorising the numbers. For every major result, everyone should be able to answer three questions:
+1. What did we do?
+2. What evidence proves the result?
+3. Why does the result matter to an electricity utility?
+That is what turns a collection of completed technical tasks into a strong group presentation.
+One question so I can help you with the next step: How many members are in your group, including you? I can then prepare a speaking script for each member, with their assigned slides, exact words to say and the technical questions they should be ready to answer.

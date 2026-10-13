@@ -1,0 +1,43 @@
+# Connection secrets. config.py holds your real password and is never committed.
+# The repository only ships config.example.py with placeholders.
+config.py
+.env
+
+# Generated dataset and intermediate CSV files.
+# These are reproduced by ingestion/capture_full.py, so they stay local.
+# The 10.7M-row dataset needs several GB and must not enter Git.
+data/
+*.csv
+*.csv.gz
+*.tsv
+
+# Exception: recorded benchmark results ARE part of the submission (Section 9.2),
+# so we re-include them after the rules above.
+!benchmarks/results/*.csv
+
+# Section 7.3/7.4 dashboard results are part of the submission too.
+!results/*.csv
+
+# Logs. Logs prove losses, redelivery and parse errors, but they are run output,
+# not source. Keep the folder, ignore the files.
+logs/*
+!logs/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Grafana runtime data. The dashboard definitions and panel queries are JSON and
+# must be committed, so only the runtime folder is ignored.
+grafana_data/
+grafana.log
+
+# Operating system noise
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,51 @@
+==============================================================================
+Section 8.4  Baseline versus model over the test week
+Started 2026-10-08T17:26:52+02:00 CAT
+Machine DESKTOP-94DVA7R/AMD64
+==============================================================================
+
+  comparable test observations 1,680
+
+OVERALL TEST METRICS (1,680 observations, kWh)
+  method             MAE        RMSE
+  baseline     42.708281   79.402867
+  model        15.116640   20.802111
+  model MAE improvement over baseline 64.60%
+
+PER-REGION TEST METRICS (kWh)
+  Region            Base MAE     Base RMSE     Model MAE    Model RMSE
+  Region 1         44.873117     83.695759     17.938513     25.014511
+  Region 10        39.716855     74.281635     12.321251     16.459864
+  Region 2         41.628612     76.810539     16.177353     20.596255
+  Region 3         42.753727     77.607456     15.195865     20.167469
+  Region 4         34.856463     64.232754     11.456390     15.974982
+  Region 5         44.400445     81.084334     17.135927     24.025410
+  Region 6         39.425942     74.766375     11.674862     15.495608
+  Region 7         39.688289     73.944966     13.600539     17.448581
+  Region 8         55.967231    102.057263     20.226620     27.607426
+  Region 9         43.772130     80.178337     15.439078     21.460098
+
+HIGHEST-ACTUAL TEST HOUR PER REGION (ties -> earliest)
+  Region      Peak hour (CAT)               Actual kWh    Base err   Model err
+  Region 1    2026-09-28T13:00:00+02:00        835.609     270.339      93.047
+  Region 10   2026-09-28T13:00:00+02:00        743.035     240.707      41.171
+  Region 2    2026-09-28T13:00:00+02:00        780.126     233.213      42.232
+  Region 3    2026-09-28T13:00:00+02:00        783.001     228.316      42.447
+  Region 4    2026-09-28T18:00:00+02:00        659.903      98.497       7.907
+  Region 5    2026-09-28T13:00:00+02:00        828.232     250.875      63.012
+  Region 6    2026-09-28T13:00:00+02:00        749.112     244.704      56.481
+  Region 7    2026-09-25T13:00:00+02:00        751.049      14.411      10.949
+  Region 8    2026-09-25T13:00:00+02:00       1016.555       6.021      61.314
+  Region 9    2026-09-23T13:00:00+02:00        808.960      12.073       9.525
+
+Plotting Region 1 across the 7 test days -> forecasting/output/8_4_forecast_comparison_Region_1.png
+  Region 1: baseline MAE 44.873  model MAE 17.939 kWh
+
+USEFULNESS JUDGEMENT
+  The frozen model's test MAE (15.12 kWh) is 2.83x lower than the previous-day baseline's
+  and its RMSE (20.80) is 3.82x lower, so the model is sufficiently
+  accurate to support daily 00:00 CAT load forecasts for the regional
+  dashboard; the remaining gap is driven by inter-day variation the
+  baseline also misses.
+Completed 2026-10-08T17:26:53+02:00 CAT
+Duration 0.443 s

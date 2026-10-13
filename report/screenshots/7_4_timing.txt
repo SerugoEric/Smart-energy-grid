@@ -1,0 +1,74 @@
+==============================================================================
+Section 7.4  Dashboard performance comparison
+Started 2026-10-07T01:31:51+02:00 CAT
+Machine DESKTOP-94DVA7R/AMD64
+Run id  2026-10-07_01-31-51
+==============================================================================
+
+  Mode            Raw = energy_readings, Aggregate = Section 6.1 views
+  Filters         2026-09-22T00:00:00+02:00 .. 2026-09-29T00:00:00+02:00  meter 1000000000
+  Per mode        1 warm-up + 10 measured
+  Cache label     WARM CACHE (warm-up first, no restart)
+  Client          smart-energy-grid via dashboards/time_dashboards.py
+  Timer           time.perf_counter() around each panel SQL and
+                  around the whole dashboard (all five panels)
+  Caching         disabled - every refresh executes every query
+
+Pausing 5 assignment background jobs for the measurement
+  paused job ids: 1000, 1001, 1002, 1003, 1004
+
+  --- mode Raw ---
+    warm-up     dashboard  29053.451 ms
+    run  1  dashboard  27730.612 ms  P1=1476.751  P2=667.453  P3=321.279  P4=4.586  P5=25069.166
+    run  2  dashboard  28991.503 ms  P1=1271.783  P2=833.992  P3=523.850  P4=7.805  P5=26197.450
+    run  3  dashboard  28888.789 ms  P1=1870.438  P2=801.957  P3=433.107  P4=7.318  P5=25540.840
+    run  4  dashboard  30414.352 ms  P1=1801.453  P2=764.021  P3=447.158  P4=4.525  P5=27201.617
+    run  5  dashboard  26136.273 ms  P1=1456.104  P2=692.223  P3=442.962  P4=15.406  P5=23382.359
+    run  6  dashboard  23199.794 ms  P1=1301.653  P2=662.185  P3=312.316  P4=6.569  P5=20780.268
+    run  7  dashboard  25211.267 ms  P1=1509.997  P2=699.290  P3=315.539  P4=5.637  P5=22493.111
+    run  8  dashboard  27333.029 ms  P1=1407.353  P2=570.385  P3=373.958  P4=5.984  P5=24838.685
+    run  9  dashboard  35208.788 ms  P1=1404.724  P2=1009.229  P3=313.879  P4=4.639  P5=32314.029
+    run 10  dashboard  36425.374 ms  P1=1110.307  P2=577.547  P3=511.310  P4=18.547  P5=34072.962
+
+  --- mode Aggregate ---
+    warm-up     dashboard    640.405 ms
+    run  1  dashboard    652.481 ms  P1=61.060  P2=25.828  P3=18.287  P4=7.776  P5=315.471
+    run  2  dashboard    768.019 ms  P1=98.082  P2=23.669  P3=28.561  P4=16.583  P5=307.716
+    run  3  dashboard    891.319 ms  P1=64.212  P2=31.673  P3=24.251  P4=10.873  P5=435.316
+    run  4  dashboard    861.636 ms  P1=108.288  P2=26.476  P3=19.767  P4=28.941  P5=318.746
+    run  5  dashboard    395.048 ms  P1=40.344  P2=12.195  P3=12.830  P4=8.534  P5=161.702
+    run  6  dashboard    328.037 ms  P1=25.652  P2=12.652  P3=5.946  P4=5.301  P5=143.621
+    run  7  dashboard    329.881 ms  P1=26.760  P2=9.762  P3=7.893  P4=4.718  P5=128.107
+    run  8  dashboard    353.529 ms  P1=21.225  P2=12.967  P3=9.175  P4=4.271  P5=169.031
+    run  9  dashboard    316.002 ms  P1=20.208  P2=14.649  P3=7.346  P4=5.201  P5=146.765
+    run 10  dashboard    476.967 ms  P1=26.444  P2=18.135  P3=12.987  P4=6.298  P5=258.044
+
+Resumed the paused jobs after measurement
+
+==============================================================================
+SUMMARY  (milliseconds, warm-cache, median/min/max)
+==============================================================================
+  Mode        Panel       Median         Min         Max
+  ------------------------------------------------------
+  Raw         P1        1431.729    1110.307    1870.438
+  Raw         P2         695.757     570.385    1009.229
+  Raw         P3         403.532     312.316     523.850
+  Raw         P4           6.277       4.525      18.547
+  Raw         P5       25305.003   20780.268   34072.962
+  Raw         total    28309.701   23199.794   36425.374
+
+  Aggregate   P1          33.552      20.208     108.288
+  Aggregate   P2          16.392       9.762      31.673
+  Aggregate   P3          12.909       5.946      28.561
+  Aggregate   P4           7.037       4.271      28.941
+  Aggregate   P5         213.538     128.107     435.316
+  Aggregate   total      436.008     316.002     891.319
+
+SECTION 6.1 AGGREGATE STORAGE AND INITIAL REFRESH COST
+------------------------------------------------------
+  cagg_15min_region          4.156 MB stored    51.672 s initial refresh
+  cagg_hour_region           1.234 MB stored    31.222 s initial refresh
+  cagg_day_meter            12.539 MB stored    16.150 s initial refresh
+
+  Per-run records appended to C:\smart-energy-grid\benchmarks\dashboard_timings.csv
+  Label these results WARM CACHE in the report.

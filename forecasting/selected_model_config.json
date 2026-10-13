@@ -1,0 +1,24 @@
+{
+  "config_id": "GB-1",
+  "settings": {
+    "n_estimators": 300,
+    "learning_rate": 0.05,
+    "max_depth": 3,
+    "subsample": 0.9,
+    "random_state": 0
+  },
+  "train_rows": 2880,
+  "val_rows": 1680,
+  "val_MAE": 15.090665019129334,
+  "val_RMSE": 20.186161167903535,
+  "predictors": [
+    "lag1d",
+    "lag2d",
+    "prev_day_mean",
+    "hour",
+    "day_of_week",
+    "is_weekend",
+    "day_index",
+    "region"
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "_comment": "Pre-change backup of the single combined Dash app (dashboards/app.py, dashboard_data.py) captured before the Section 7 refactor. The mode radio switched all five panels between Raw (energy_readings) and Aggregate (Section 6.1 continuous aggregates). No secrets are present. Source .py files are copied alongside as *.py.bak.",
+  "captured_from": [
+    "dashboards/app.py",
+    "dashboards/dashboard_data.py",
+    "dashboards/time_dashboards.py",
+    "dashboards/verify_dashboards.py"
+  ],
+  "tool": "Dash (Plotly)",
+  "dash_version": "4.4.1",
+  "plotly_version": "6.7.0",
+  "timezone": "Africa/Kigali",
+  "default_time_range": {
+    "start": "2026-09-22T00:00:00+02:00",
+    "end": "2026-09-29T00:00:00+02:00",
+    "end_exclusive": true
+  },
+  "variables": [
+    {"name": "mode", "type": "radio", "options": ["Raw", "Aggregate"], "default": "Raw"},
+    {"name": "start", "type": "text", "default": "2026-09-22"},
+    {"name": "end", "type": "text", "default": "2026-09-29"},
+    {"name": "meter", "type": "dropdown", "default": 1000000000, "used_by": ["P4"]}
+  ],
+  "panels": [
+    {
+      "id": "P1",
+      "title": "Hourly regional energy (kWh)",
+      "unit": "kWh",
+      "raw_source": "energy_readings JOIN meters",
+      "agg_source": "cagg_hour_region",
+      "raw_sql": "SELECT time_bucket(INTERVAL '1 hour', r.event_time, TIMESTAMPTZ %s) AS bucket, m.region AS region, sum(r.energy_kwh) AS energy_kwh FROM energy_readings r JOIN meters m USING (meter_id) WHERE r.event_time >= %s::timestamptz AND r.event_time < %s::timestamptz GROUP BY bucket, m.region ORDER BY bucket, m.region",
+      "agg_sql": "SELECT bucket, region, sum(sum_energy_kwh) AS energy_kwh FROM cagg_hour_region WHERE bucket >= %s::timestamptz AND bucket < %s::timestamptz GROUP BY bucket, region ORDER BY bucket, region"
+    },
+    {
+      "id": "P2",
+      "title": "Daily network energy (kWh)",
+      "unit": "kWh",
+      "raw_source": "energy_readings",
+      "agg_source": "cagg_15min_region",
+      "raw_sql": "SELECT time_bucket(INTERVAL '1 day', r.event_time, TIMESTAMPTZ %s) AS bucket, sum(r.energy_kwh) AS energy_kwh FROM energy_readings r WHERE r.event_time >= %s::timestamptz AND r.event_time < %s::timestamptz GROUP BY bucket ORDER BY bucket",
+      "agg_sql": "SELECT time_bucket(INTERVAL '1 day', bucket, TIMESTAMPTZ %s) AS bucket, sum(sum_energy_kwh) AS energy_kwh FROM cagg_15min_region WHERE bucket >= %s::timestamptz AND bucket < %s::timestamptz GROUP BY 1 ORDER BY 1"
+    },
+    {
+      "id": "P3",
+      "title": "Network energy in Section 5.1 seven-day periods (kWh)",
+      "unit": "kWh",
+      "raw_source": "energy_readings",
+      "agg_source": "cagg_15min_region",
+      "raw_sql": "per-period loop: SELECT sum(r.energy_kwh) FROM energy_readings r WHERE r.event_time >= GREATEST(%s::timestamptz,%s::timestamptz) AND r.event_time < LEAST(%s::timestamptz,%s::timestamptz)",
+      "agg_sql": "per-period loop: SELECT sum(sum_energy_kwh) FROM cagg_15min_region WHERE bucket >= GREATEST(%s::timestamptz,%s::timestamptz) AND bucket < LEAST(%s::timestamptz,%s::timestamptz)"
+    },
+    {
+      "id": "P4",
+      "title": "Daily energy of selected meter (kWh)",
+      "unit": "kWh",
+      "raw_source": "energy_readings",
+      "agg_source": "cagg_day_meter",
+      "raw_sql": "SELECT time_bucket(INTERVAL '1 day', r.event_time, TIMESTAMPTZ %s) AS bucket, sum(r.energy_kwh) AS energy_kwh FROM energy_readings r WHERE r.meter_id = %s AND r.event_time >= %s::timestamptz AND r.event_time < %s::timestamptz GROUP BY bucket ORDER BY bucket",
+      "agg_sql": "SELECT bucket, sum_energy_kwh AS energy_kwh FROM cagg_day_meter WHERE meter_id = %s AND bucket >= %s::timestamptz AND bucket < %s::timestamptz ORDER BY bucket"
+    },
+    {
+      "id": "P5",
+      "title": "Completeness by region (%)",
+      "unit": "percent",
+      "raw_source": "energy_readings JOIN meters",
+      "agg_source": "cagg_15min_region + meters",
+      "raw_sql": "SELECT m.region, count(DISTINCT (r.meter_id, r.event_time)) AS observed FROM energy_readings r JOIN meters m USING (meter_id) WHERE r.event_time >= %s::timestamptz AND r.event_time < %s::timestamptz GROUP BY m.region",
+      "agg_sql": "SELECT region, sum(reading_count) AS observed FROM cagg_15min_region WHERE bucket >= %s::timestamptz AND bucket < %s::timestamptz GROUP BY region",
+      "note": "Pre-change Raw used count(DISTINCT (meter_id, event_time)); requirement 7.1 says count(*) of cleaned rows."
+    }
+  ]
+}

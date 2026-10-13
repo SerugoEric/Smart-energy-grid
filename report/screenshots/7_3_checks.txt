@@ -1,0 +1,20 @@
+==============================================================================
+Section 7.3  Verify Raw and Aggregate match
+Started 2026-10-08T17:02:07+02:00 CAT
+Machine DESKTOP-94DVA7R/AMD64
+==============================================================================
+Range 2026-09-22 00:00:00+02:00 .. 2026-09-29 00:00:00+02:00 exclusive, all regions, meter 1000000000
+
+Panel data exported to panel_data_raw.csv / panel_data_agg.csv
+
+Panel       Rows   Energy max abs diff  Counts equal
+  --------------------------------------------------------
+  P1          1680              0.000000          True
+  P2             7              0.000000          True
+  P3             1              0.000000          True
+  P4             7              0.000000          True
+  P5            10           0.000000000          True
+
+PASS - both dashboards match within tolerances
+Completed 2026-10-08T17:02:59+02:00 CAT
+Duration 52.158 s

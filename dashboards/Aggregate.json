@@ -1,0 +1,65 @@
+{
+  "name": "Aggregate",
+  "tool": "Dash (Plotly)",
+  "note": "Dash has no Grafana JSON; this is the portable dashboard definition. Contains no connection secrets.",
+  "timezone": "Africa/Kigali",
+  "default_time_range": {
+    "picker_start": "2026-09-22",
+    "picker_end_inclusive": "2026-09-28",
+    "query_start": "2026-09-22T00:00:00+02:00",
+    "query_end_exclusive": "2026-09-29T00:00:00+02:00"
+  },
+  "variables": [
+    {
+      "name": "range",
+      "type": "date_range_cat_days",
+      "end_exclusive": true,
+      "default": "2026-09-22 .. 2026-09-29"
+    },
+    {
+      "name": "meter",
+      "type": "dropdown",
+      "default": 1000000000,
+      "used_by": [
+        "P4"
+      ]
+    }
+  ],
+  "panels": [
+    {
+      "id": "P1",
+      "title": "Hourly regional energy",
+      "unit": "kWh",
+      "source": "cagg_hour_region",
+      "sql": "-- Section 7.2 / 7.3  Panel P1 (Aggregate): hourly regional energy, kWh.\n-- Source: cagg_hour_region continuous aggregate (already CAT-hour x region).\n-- No measurement query may touch energy_readings.\nSELECT bucket,\n       region,\n       sum(sum_energy_kwh) AS energy_kwh\nFROM cagg_hour_region\nWHERE bucket >= %(start)s::timestamptz\n  AND bucket <  %(end)s::timestamptz\nGROUP BY bucket, region\nORDER BY bucket, region;\n"
+    },
+    {
+      "id": "P2",
+      "title": "Daily network energy",
+      "unit": "kWh",
+      "source": "cagg_15min_region (re-bucketed to CAT days)",
+      "sql": "-- Section 7.2 / 7.3  Panel P2 (Aggregate): daily network energy, kWh.\n-- Source: cagg_15min_region re-bucketed to CAT days (origin 2026-09-01).\n-- Sum stored energy sums; never average averages.\nSELECT time_bucket(INTERVAL '1 day', bucket,\n                   TIMESTAMPTZ '2026-09-01 00:00:00+02') AS bucket,\n       sum(sum_energy_kwh)                               AS energy_kwh\nFROM cagg_15min_region\nWHERE bucket >= %(start)s::timestamptz\n  AND bucket <  %(end)s::timestamptz\nGROUP BY 1\nORDER BY 1;\n"
+    },
+    {
+      "id": "P3",
+      "title": "Network energy in seven-day periods",
+      "unit": "kWh",
+      "source": "cagg_15min_region (re-bucketed to CAT days, mapped to periods)",
+      "sql": "-- Section 7.2 / 7.3  Panel P3 (Aggregate): network energy in the four seven-day\n-- periods, kWh. Source: cagg_15min_region re-bucketed to CAT days, mapped onto\n-- the four Section 5.1 periods (bucket origin 2026-09-01 00:00+02).\nWITH periods(period, p_start, p_end, ord) AS (\n    VALUES\n      ('1-7 Sep',   TIMESTAMPTZ '2026-09-01 00:00:00+02', TIMESTAMPTZ '2026-09-08 00:00:00+02', 1),\n      ('8-14 Sep',  TIMESTAMPTZ '2026-09-08 00:00:00+02', TIMESTAMPTZ '2026-09-15 00:00:00+02', 2),\n      ('15-21 Sep', TIMESTAMPTZ '2026-09-15 00:00:00+02', TIMESTAMPTZ '2026-09-22 00:00:00+02', 3),\n      ('22-28 Sep', TIMESTAMPTZ '2026-09-22 00:00:00+02', TIMESTAMPTZ '2026-09-29 00:00:00+02', 4)\n),\ndaily AS (\n    SELECT time_bucket(INTERVAL '1 day', bucket,\n                       TIMESTAMPTZ '2026-09-01 00:00:00+02') AS d,\n           sum(sum_energy_kwh)                               AS energy_kwh\n    FROM cagg_15min_region\n    WHERE bucket >= %(start)s::timestamptz\n      AND bucket <  %(end)s::timestamptz\n    GROUP BY 1\n)\nSELECT p.period          AS period,\n       sum(daily.energy_kwh) AS energy_kwh\nFROM periods p\nJOIN daily\n  ON daily.d >= GREATEST(p.p_start, %(start)s::timestamptz)\n AND daily.d <  LEAST(p.p_end,   %(end)s::timestamptz)\nGROUP BY p.period, p.ord\nORDER BY p.ord;\n"
+    },
+    {
+      "id": "P4",
+      "title": "Daily energy of selected meter",
+      "unit": "kWh",
+      "source": "cagg_day_meter",
+      "sql": "-- Section 7.2 / 7.3  Panel P4 (Aggregate): daily energy of the selected meter.\n-- Source: cagg_day_meter continuous aggregate (CAT-day x meter_id).\nSELECT bucket,\n       sum_energy_kwh AS energy_kwh\nFROM cagg_day_meter\nWHERE meter_id = %(meter)s\n  AND bucket >= %(start)s::timestamptz\n  AND bucket <  %(end)s::timestamptz\nORDER BY bucket;\n"
+    },
+    {
+      "id": "P5",
+      "title": "Completeness by region",
+      "unit": "percent",
+      "source": "cagg_15min_region (SUM(reading_count)); meters (registered counts)",
+      "sql": "-- Section 7.2 / 7.3  Panel P5 (Aggregate): completeness by region, percent.\n-- observed = SUM(reading_count) from cagg_15min_region (sum stored counts,\n--            never average averages).\n-- planned  = registered meters in the region x 96 readings/day x days in range,\n--            computed from the meters table and the selected CAT-day period.\nWITH reg AS (\n    SELECT region, count(*) AS registered\n    FROM meters\n    GROUP BY region\n),\nobs AS (\n    SELECT region, sum(reading_count) AS observed\n    FROM cagg_15min_region\n    WHERE bucket >= %(start)s::timestamptz\n      AND bucket <  %(end)s::timestamptz\n    GROUP BY region\n)\nSELECT reg.region              AS region,\n       reg.registered          AS registered,\n       obs.observed            AS observed,\n       reg.registered * 96\n           * ((%(end)s::date - %(start)s::date))            AS planned,\n       100.0 * obs.observed\n           / (reg.registered * 96\n              * ((%(end)s::date - %(start)s::date)))        AS completeness\nFROM reg\nJOIN obs USING (region)\nORDER BY split_part(reg.region, ' ', 2)::int;\n"
+    }
+  ]
+}

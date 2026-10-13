@@ -1,0 +1,249 @@
+"""Dash dashboard factory (Sections 7.1 and 7.2).
+
+TWO SEPARATE DASHBOARDS
+    create_app("Raw")        -> dashboard titled "Raw"
+    create_app("Aggregate")  -> dashboard titled "Aggregate"
+
+    Each runs as its own server (see raw_app.py / aggregate_app.py). Both share
+    the exact same five panels, layout, filters and default date range; the only
+    difference is where the measurement queries read from:
+
+        Raw        all five panels query energy_readings directly and join
+                   meters for the region label (Section 7.1)
+        Aggregate  all five panels read the Section 6.1 continuous aggregates
+                   (cagg_hour_region, cagg_15min_region, cagg_day_meter) and use
+                   meters only for labels and registered counts (Section 7.2)
+
+    The panel SQL is loaded from sql/dashboards/<mode>/*.sql, so the dashboards,
+    the verifier and the benchmark all execute identical SQL.
+
+FILTERS (both dashboards)
+    * Date range in whole CAT days, applied as event_time >= start AND
+      event_time < end (end exclusive) in every panel query.
+    * Meter selector (default 1000000000) used only by the meter-history panel P4.
+    * Time zone Africa/Kigali; day buckets align to CAT midnight.
+
+HOW TO RUN
+        python dashboards\\raw_app.py          -> http://127.0.0.1:8050  (Raw)
+        python dashboards\\aggregate_app.py    -> http://127.0.0.1:8051  (Aggregate)
+"""
+
+import os
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import plotly.graph_objects as go
+from dash import Dash, Input, Output, State, dcc, html
+
+PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+sys.path.insert(0, PROJECT_ROOT)
+
+from common.cat_time import cat_now, cat_text  # noqa: E402
+from dashboard_data import PANELS, run_dashboard  # noqa: E402
+
+# Default range: 00:00 on 22 September through 00:00 on 29 September (exclusive).
+# In the inclusive date picker that is 22 .. 28 September, end date plus one day.
+INITIAL_START = datetime.fromisoformat("2026-09-22T00:00:00+02:00")
+INITIAL_END_INCLUSIVE = datetime.fromisoformat("2026-09-28T00:00:00+02:00")
+INITIAL_METER = 1000000000
+
+PANEL_STYLE = {"width": "33%", "height": "280px", "padding": "4px",
+               "border": "1px solid #d0d0d0", "boxSizing": "border-box"}
+PANEL_HEIGHT = 280
+PANEL_MARGIN = dict(l=55, r=15, t=40, b=35)
+
+
+def hour_x(values):
+    return [v.isoformat(timespec="minutes") for v in values]
+
+
+def figure_p1(rows) -> dict:
+    regions = sorted({r["region"] for r in rows})
+    buckets = sorted({r["bucket"] for r in rows})
+    fig = go.Figure()
+    for region in regions:
+        fig.add_trace(go.Scatter(
+            x=hour_x(buckets),
+            y=[next((r["energy_kwh"] for r in rows
+                     if r["region"] == region and r["bucket"] == b), None)
+               for b in buckets],
+            mode="lines", name=region, connectgaps=False,
+        ))
+    fig.update_layout(title="P1  Hourly regional energy (kWh)",
+                      xaxis_title="CAT hour", yaxis_title="Energy [kWh]",
+                      height=PANEL_HEIGHT,
+                      margin=dict(l=55, r=15, t=70, b=35),
+                      legend=dict(orientation="h", x=0, y=1.16,
+                                  font=dict(size=9)))
+    return fig
+
+
+def figure_p2(rows) -> dict:
+    fig = go.Figure(go.Bar(x=hour_x([r["bucket"] for r in rows]),
+                           y=[r["energy_kwh"] for r in rows]))
+    fig.update_layout(title="P2  Daily network energy (kWh)",
+                      xaxis_title="CAT day", yaxis_title="Energy [kWh]",
+                      height=PANEL_HEIGHT, margin=PANEL_MARGIN)
+    return fig
+
+
+def figure_p3(rows) -> dict:
+    fig = go.Figure(go.Bar(x=[r["period"] for r in rows],
+                           y=[r["energy_kwh"] for r in rows]))
+    fig.update_layout(title="P3  Network energy in Section 5.1 seven-day "
+                            "periods (kWh)",
+                      xaxis_title="Seven-day period", yaxis_title="Energy [kWh]",
+                      height=PANEL_HEIGHT, margin=PANEL_MARGIN)
+    return fig
+
+
+def figure_p4(rows) -> dict:
+    fig = go.Figure(go.Bar(x=hour_x([r["bucket"] for r in rows]),
+                           y=[r["energy_kwh"] for r in rows]))
+    fig.update_layout(title="P4  Daily energy of selected meter (kWh)",
+                      xaxis_title="CAT day", yaxis_title="Energy [kWh]",
+                      height=PANEL_HEIGHT, margin=PANEL_MARGIN)
+    return fig
+
+
+def figure_p5(rows, meter_label: str) -> dict:
+    y = [r["completeness"] for r in rows]
+    lowest = min(y) if y else 0.0
+    # An honest y-axis: either the full 0-100 scale, or a zoom whose bounds are
+    # stated in the axis title. ~99% bars are indistinguishable on a 0-100 axis,
+    # so zoom to 95-100 when every value is at least 95%.
+    if lowest >= 95.0:
+        low, high = 95.0, 100.0
+        axis_title = "Completeness [%]  (y-axis zoomed 95-100)"
+    else:
+        low, high = 0.0, 100.0
+        axis_title = "Completeness [%]  (y-axis 0-100, full scale)"
+    fig = go.Figure(go.Bar(
+        x=[r["region"] for r in rows],
+        y=y,
+        text=[f"{v:.2f}%" for v in y],
+        textposition="outside",
+        textfont=dict(size=9),
+        cliponaxis=False,
+    ))
+    fig.update_layout(title=f"P5  Completeness by region ({meter_label})",
+                      xaxis_title="Region", yaxis_title=axis_title,
+                      yaxis=dict(range=[low, high]),
+                      height=PANEL_HEIGHT, margin=PANEL_MARGIN)
+    return fig
+
+
+FIGURE_DEFS = {"P1": figure_p1, "P2": figure_p2, "P3": figure_p3,
+               "P4": figure_p4}
+
+
+def build(mode: str, start, end, meter_id):
+    """Run the five panel queries and build their figures.
+
+    Returns (figures, timings). Used by the dashboard callback and by the
+    benchmark harness, so the measured work is exactly the dashboard's work.
+    """
+    started = cat_now()
+    results = run_dashboard(mode, start, end, meter_id)
+    figures = {}
+    timings = {}
+    for panel_id in PANELS:
+        panel = results[panel_id]
+        timings[panel_id] = round(panel.query_ms, 3)
+        if panel_id == "P5":
+            figures[panel_id] = figure_p5(panel.rows,
+                                          f"{mode} mode, meter {meter_id}")
+        else:
+            figures[panel_id] = FIGURE_DEFS[panel_id](panel.rows)
+    timings["total_ms"] = round(sum(results[p].query_ms for p in PANELS), 3)
+    timings["started"] = started.isoformat(timespec="seconds")
+    timings["finished"] = cat_now().isoformat(timespec="seconds")
+    timings["mode"] = mode
+    return figures, timings
+
+
+def load_meters():
+    from common.db import connect
+
+    connection = connect()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT meter_id FROM meters ORDER BY meter_id")
+        options = [row[0] for row in cursor.fetchall()]
+    connection.close()
+    return [{"label": str(m), "value": m} for m in options]
+
+
+def create_app(mode: str) -> Dash:
+    app = Dash(__name__)
+    app.title = mode
+    meter_options = load_meters()
+
+    app.layout = html.Div(children=[
+        html.H1(f"{mode} Dashboard", id="dash-title",
+                style={"textAlign": "center"}),
+        html.Div([
+            html.Span("Date range (CAT days, last day included): "),
+            dcc.DatePickerRange(
+                id="range",
+                min_date_allowed=datetime(2026, 9, 1),
+                max_date_allowed=datetime(2026, 9, 28),
+                start_date=INITIAL_START.date(),
+                end_date=INITIAL_END_INCLUSIVE.date(),
+                display_format="YYYY-MM-DD",
+                clearable=False,
+            ),
+            html.Span("Meter: ", style={"marginLeft": "20px"}),
+            dcc.Dropdown(id="meter", options=meter_options,
+                         value=INITIAL_METER,
+                         style={"width": 220, "display": "inline-block"}),
+            html.Button("Refresh", id="refresh", n_clicks=0,
+                        style={"marginLeft": "20px"}),
+        ], style={"margin": "10px auto", "width": "95%",
+                  "display": "flex", "alignItems": "center"}),
+        html.Div(id="timings", style={"margin": "10px auto", "width": "95%",
+                                      "fontFamily": "monospace",
+                                      "whiteSpace": "pre-wrap"}),
+        html.Div([
+            dcc.Graph(id="g1", figure={}, style=PANEL_STYLE),
+            dcc.Graph(id="g2", figure={}, style=PANEL_STYLE),
+            dcc.Graph(id="g3", figure={}, style=PANEL_STYLE),
+            dcc.Graph(id="g4", figure={}, style=PANEL_STYLE),
+            dcc.Graph(id="g5", figure={}, style=PANEL_STYLE),
+        ], style={"display": "flex", "flexWrap": "wrap", "width": "96%",
+                  "margin": "0 auto", "alignItems": "flex-start"}),
+        dcc.Interval(id="firstload", interval=100, max_intervals=1),
+    ])
+
+    @app.callback(
+        [Output("g1", "figure"), Output("g2", "figure"), Output("g3", "figure"),
+         Output("g4", "figure"), Output("g5", "figure"),
+         Output("timings", "children")],
+        [Input("refresh", "n_clicks"), Input("firstload", "n_intervals")],
+        [State("range", "start_date"), State("range", "end_date"),
+         State("meter", "value")],
+    )
+    def _refresh(_clicks, _first, start_date, end_date, meter):
+        start_dt = datetime.fromisoformat(f"{start_date}T00:00:00+02:00")
+        end_exclusive = (datetime.fromisoformat(f"{end_date}T00:00:00+02:00")
+                         + timedelta(days=1))
+        figures, timings = build(mode, start_dt, end_exclusive, int(meter))
+        summary = (f"{mode} dashboard   range [{start_dt.date()} .. "
+                   f"{end_exclusive.date()}) exclusive   meter {meter}\n"
+                   + "\n".join(
+                       f"  {k:<6}{v:>12.3f} ms"
+                       for k, v in timings.items()
+                       if k not in ("started", "finished", "mode"))
+                   + f"\n  span   {timings['started']} .. {timings['finished']}")
+        return (figures["P1"], figures["P2"], figures["P3"],
+                figures["P4"], figures["P5"], summary)
+
+    return app
+
+
+if __name__ == "__main__":
+    selected = os.environ.get("DASH_MODE", "Raw")
+    application = create_app(selected)
+    print(f"Starting {selected} dashboard {cat_text()} CAT")
+    application.run(debug=False, host="127.0.0.1",
+                    port=int(os.environ.get("DASH_PORT", "8050")))
